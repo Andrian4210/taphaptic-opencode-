@@ -1,12 +1,15 @@
 # Taphaptic
 
-Taphaptic sends Claude Code task status to Apple Watch using a local API running on your Mac.
+Taphaptic sends AI coding assistant task status to Apple Watch using a local API running on your Mac.
+
+Supported consumers: **Claude Code** and **opencode** (CLI and Mac app).
 
 ## What this repo contains
 
 - watchOS app (watch-only)
 - local Go API for pairing + event ingestion
-- Claude hook installer
+- Claude Code hook installer
+- opencode plugin installer
 
 ## Requirements
 
@@ -18,8 +21,16 @@ Taphaptic sends Claude Code task status to Apple Watch using a local API running
 
 1. Clone and bootstrap in one command:
 
+**Claude Code:**
+
 ```sh
 git clone https://github.com/dzzzgnr/taphaptic.git && cd taphaptic && ./scripts/bootstrap-watch.sh
+```
+
+**opencode (CLI or Mac app):**
+
+```sh
+git clone https://github.com/dzzzgnr/taphaptic.git && cd taphaptic && ./scripts/bootstrap-watch.sh --consumer opencode
 ```
 
 2. In Xcode, select scheme `Taphaptic`, choose your physical Apple Watch destination, and press Run.
@@ -38,7 +49,7 @@ Bootstrap builds `taphaptic-api` and `taphapticctl` from local source.
 
 This runs in the background and prints the API log path.
 
-2. Start a new Claude session so hooks load.
+2. Start a new Claude Code or opencode session so hooks/plugins load.
 
 3. Optional verification event:
 
@@ -73,6 +84,55 @@ Restart after Wi-Fi/network/IP changes:
 ./scripts/start-api.sh
 ```
 
+## opencode Integration
+
+Taphaptic integrates with both the **opencode CLI** and the **opencode Mac app**.
+Both use the same configuration directory (`~/.config/opencode/`), so one install step covers both.
+
+### Connect opencode
+
+```sh
+./scripts/connect-opencode.sh
+```
+
+This writes `~/.config/opencode/plugins/taphaptic.js` which opencode loads automatically at startup.
+
+### What events are sent
+
+| opencode event     | Taphaptic action    | Apple Watch notification         |
+|--------------------|---------------------|----------------------------------|
+| `session.idle`     | `stop`              | Session completed, ready for you |
+| `session.error`    | `failed`            | Session failed                   |
+| `permission.asked` | `permission_prompt` | opencode needs permission        |
+
+### Manual install (advanced)
+
+You can also run the installer directly:
+
+```sh
+taphapticctl install-opencode
+```
+
+Or with a custom API URL:
+
+```sh
+taphapticctl install-opencode --api-base-url http://127.0.0.1:8080
+```
+
+## Claude Code Integration
+
+### Connect Claude Code
+
+```sh
+./scripts/connect-claude-code.sh
+```
+
+Or use project-scoped hooks:
+
+```sh
+./scripts/connect-claude-code.sh --scope project
+```
+
 ## Uninstall
 
 Run from anywhere (no local clone required):
@@ -92,7 +152,7 @@ If you already cloned this repo:
 - Installer calls `POST /v1/claude/installations` to bootstrap installation identity.
 - Installer calls `POST /v1/watch/pairings/code` to generate a 4-digit code.
 - Watch app auto-discovers the local API on LAN (`_taphaptic._tcp`) and claims code via `POST /v1/watch/pairings/claim`.
-- Claude hooks send events with `POST /v1/events`.
+- Claude Code hooks / opencode plugin send events with `POST /v1/events`.
 - Watch polls events with `GET /v1/events?since=<id>`.
 
 ## Local API
