@@ -51,6 +51,114 @@ func TestEventForAction(t *testing.T) {
 	}
 }
 
+func TestApplySourceOpencode(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		action    string
+		wantType  string
+		wantTitle string
+	}{
+		{action: "stop", wantType: "completed", wantTitle: "opencode completed"},
+		{action: "subagent_stop", wantType: "subagent_completed", wantTitle: "opencode subagent completed"},
+		{action: "failed", wantType: "failed", wantTitle: "opencode failed"},
+		{action: "permission_prompt", wantType: "attention", wantTitle: "opencode needs permission"},
+		{action: "attention", wantType: "attention", wantTitle: "opencode needs attention"},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.action, func(t *testing.T) {
+			t.Parallel()
+			base, err := eventForAction(tc.action)
+			if err != nil {
+				t.Fatalf("eventForAction(%q) error: %v", tc.action, err)
+			}
+			got := applySource(base, "opencode")
+			if got.Source != "opencode" {
+				t.Fatalf("applySource source=%q, want %q", got.Source, "opencode")
+			}
+			if got.Type != tc.wantType {
+				t.Fatalf("applySource(%q) type=%q, want %q", tc.action, got.Type, tc.wantType)
+			}
+			if got.Title != tc.wantTitle {
+				t.Fatalf("applySource(%q) title=%q, want %q", tc.action, got.Title, tc.wantTitle)
+			}
+		})
+	}
+}
+
+func TestApplySourceUnknownPassthrough(t *testing.T) {
+	t.Parallel()
+
+	base, _ := eventForAction("stop")
+	got := applySource(base, "my-tool")
+	if got.Source != "my-tool" {
+		t.Fatalf("applySource passthrough source=%q, want %q", got.Source, "my-tool")
+	}
+	// Title should be unchanged for unknown sources
+	if got.Title != base.Title {
+		t.Fatalf("applySource passthrough changed title: %q -> %q", base.Title, got.Title)
+	}
+}
+
+func TestOpencodePluginScript(t *testing.T) {
+	t.Parallel()
+
+	ctlPath := "/usr/local/bin/taphapticctl"
+	script := opencodePluginScript(ctlPath)
+
+	if !strings.Contains(script, ctlPath) {
+		t.Fatalf("plugin script does not contain ctl path %q", ctlPath)
+	}
+	if !strings.Contains(script, "TaphapticPlugin") {
+		t.Fatal("plugin script does not export TaphapticPlugin")
+	}
+	if !strings.Contains(script, "session.idle") {
+		t.Fatal("plugin script does not handle session.idle")
+	}
+	if !strings.Contains(script, "session.error") {
+		t.Fatal("plugin script does not handle session.error")
+	}
+	if !strings.Contains(script, "permission.asked") {
+		t.Fatal("plugin script does not handle permission.asked")
+	}
+	if !strings.Contains(script, "--source opencode") {
+		t.Fatal("plugin script does not pass --source opencode")
+	}
+}
+
+func TestOpencodePluginScriptQuotesPath(t *testing.T) {
+	t.Parallel()
+
+	ctlPath := `/path/with spaces/taphapticctl`
+	script := opencodePluginScript(ctlPath)
+	// The path must be quoted (JSON-style) so spaces don't break the JS string
+	if !strings.Contains(script, `"\/path\/with spaces\/taphapticctl"`) &&
+		!strings.Contains(script, `"/path/with spaces/taphapticctl"`) {
+		t.Fatalf("path with spaces is not properly quoted in script: %q", script[:min(200, len(script))])
+	}
+}
+
+func TestResolveAppPathsOpencodeFields(t *testing.T) {
+	t.Parallel()
+
+	paths, err := resolveAppPaths()
+	if err != nil {
+		t.Fatalf("resolveAppPaths() error: %v", err)
+	}
+
+	if !strings.Contains(paths.OpencodePluginsDir, "opencode") {
+		t.Fatalf("OpencodePluginsDir=%q does not contain 'opencode'", paths.OpencodePluginsDir)
+	}
+	if !strings.HasSuffix(paths.OpencodePluginPath, "taphaptic.js") {
+		t.Fatalf("OpencodePluginPath=%q does not end with 'taphaptic.js'", paths.OpencodePluginPath)
+	}
+	if filepath.Dir(paths.OpencodePluginPath) != paths.OpencodePluginsDir {
+		t.Fatalf("OpencodePluginPath=%q not in OpencodePluginsDir=%q", paths.OpencodePluginPath, paths.OpencodePluginsDir)
+	}
+}
+
 func TestMergeClaudeHooksIdempotentAndPrunesLegacy(t *testing.T) {
 	t.Parallel()
 
